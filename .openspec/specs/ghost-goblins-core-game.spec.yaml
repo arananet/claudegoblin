@@ -1,0 +1,86 @@
+# Feature Spec — Ghost 'n Goblins Core Game
+# Claude Code Game Studios / OpenSpec
+
+title: "Ghost 'n Goblins Core Game — ClaudeGoblin"
+slug: "ghost-goblins-core-game"
+type: feature
+status: review
+
+author: "arananet"
+created_at: "2026-04-17"
+updated_at: "2026-04-17"
+
+description: |
+  ClaudeGoblin is a side-scrolling action platformer clone of the classic
+  Ghost 'n Goblins arcade game (Capcom, 1985), featuring Claude — Anthropic's
+  orange mascot — as the hero replacing Arthur. The player runs right across
+  scrolling horror-themed levels, throwing weapons at undead enemies, while
+  managing a two-hit health system (armored → unarmored → dead). The game
+  faithfully reproduces the core loop: tight platforming, wave-based enemy
+  spawning, weapon pickups, and a brutal difficulty curve.
+
+  Built with Godot 4 (GDScript) using the Claude Code Game Studios framework.
+
+acceptance_criteria:
+  - "Given the game is launched, when the title screen loads, then Claude's orange sprite is displayed as the hero character with a 'Press Start' prompt"
+  - "Given the player is on the ground, when left/right arrow keys are pressed, then Claude moves horizontally at a consistent speed of 120px/s"
+  - "Given the player presses the jump key (Space/Up), then Claude jumps with a fixed arc and cannot change direction mid-air (faithful to original)"
+  - "Given the player presses the attack key (Z/X), then a lance/spear projectile is thrown horizontally and travels across the screen"
+  - "Given Claude is armored and hit by an enemy, then the armor is removed (sprites change to unarmored Claude) and the player is briefly invincible"
+  - "Given Claude is unarmored and hit by an enemy, then the player loses a life and respawns at the last checkpoint in armored state"
+  - "Given the player has 0 lives remaining and is hit, then the Game Over screen is shown"
+  - "Given an armor pickup is present on the ground, when Claude walks over it, then Claude re-equips armor and the armored sprite is restored"
+  - "Given level 1 is active, when the player reaches the right edge of the level, then the level-complete fanfare plays and the score is shown"
+  - "Given an enemy zombie spawns, when Claude's projectile hits it, then the enemy plays a death animation and is removed from the scene"
+  - "Given a flying knight is spawned, it follows a sine-wave flight path toward the player position"
+  - "Given the player stands idle, when 1 second passes, then Claude's idle animation loops correctly"
+
+test_plan:
+  - "Unit test: PlayerController — assert horizontal velocity = 120 when move_left/move_right action pressed"
+  - "Unit test: PlayerController — assert jump velocity applied once and mid-air direction locked"
+  - "Unit test: PlayerController — assert attack action spawns one Projectile node per input press"
+  - "Unit test: HealthSystem — assert first hit transitions armor_state from ARMORED to UNARMORED"
+  - "Unit test: HealthSystem — assert second hit decrements life_count by 1 and resets armor_state to ARMORED"
+  - "Unit test: HealthSystem — assert life_count = 0 triggers game_over signal"
+  - "Unit test: Enemy (Zombie) — assert enemy is queue_freed after taking 1 hit from projectile"
+  - "Unit test: FlyingKnight — assert y_position follows sin(time) * amplitude wave pattern"
+  - "Integration test: Armor pickup — spawn ArmorPickup, move player over it while UNARMORED, assert armor_state == ARMORED"
+  - "Integration test: Level completion — trigger level_end area, assert LevelComplete signal emitted"
+
+qa_notes: |
+  Manual QA checklist:
+  - Verify Claude's sprite sheet animations: idle, run, jump, attack (armored + unarmored sets)
+  - Verify collision shapes match visible sprite bounds
+  - Verify enemies do not clip through terrain platforms
+  - Verify projectile disappears on hitting an enemy OR the screen edge
+  - Play through level 1 start to finish verifying no softlocks
+
+out_of_scope:
+  - Multiplayer / co-op mode
+  - Online leaderboards
+  - Levels beyond Level 1 (follow-up spec)
+  - Boss enemies (follow-up spec)
+  - Sound effects and music (follow-up spec)
+  - Mobile / touch input
+  - Save/load game state
+
+implementation_skill: null
+
+technical_notes: |
+  Engine: Godot 4.x (GDScript)
+  Framework: Claude Code Game Studios (src/, assets/, tests/ directory conventions)
+
+  Key nodes:
+  - CharacterBody2D for Claude player (uses move_and_slide)
+  - Area2D + CollisionShape2D for pickups and hazards
+  - AnimatedSprite2D for all sprite animations
+  - TileMap for level terrain
+  - CanvasLayer for HUD (lives, score, timer)
+
+  Claude sprite placeholder: 32x32 orange block with "C" label until final art
+  Enemy sprites: colored rectangles with type labels as placeholders
+
+  Physics: Godot default gravity (980 px/s²); jump_velocity = -400px/s
+
+linked_issues: []
+linked_prs: []

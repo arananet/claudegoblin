@@ -1,6 +1,44 @@
-# {{PROJECT_NAME}}
+# ClaudeGoblin
 
-{{PROJECT_DESCRIPTION}}
+A **Ghost 'n Goblins** clone featuring **Claude** — Anthropic's orange mascot —
+as the hero, built with **Godot 4** and the
+[Claude Code Game Studios](https://github.com/Donchitos/Claude-Code-Game-Studios) framework.
+
+```mermaid
+graph LR
+    A[Title Screen] --> B[Level 1: The Graveyard]
+    B --> C{Claude survives?}
+    C -- Yes --> D[Level Complete!]
+    C -- No --> E[Game Over]
+    E --> B
+```
+
+## About
+
+ClaudeGoblin is a faithful 2D side-scrolling action platformer capturing the
+brutal arcade-era feel of the 1985 Capcom classic. Claude wears orange plate armor,
+hurls lances at zombies and flying knights, and endures the iconic two-hit death
+system: one hit strips the armor, the next costs a life.
+
+### Controls
+
+| Action | Keys |
+|--------|------|
+| Move left/right | Arrow Keys or A/D |
+| Jump | Space or Up Arrow |
+| Throw lance | Z or X |
+
+### How to Run
+
+```bash
+# Requires Godot 4.x — https://godotengine.org/download
+godot --path .
+
+# Headless test runner (CI)
+godot --headless -s tests/run_tests.gd
+```
+
+---
 
 ---
 
