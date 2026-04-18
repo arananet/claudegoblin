@@ -1,0 +1,18 @@
+{
+  "name": "claudegoblin",
+  "version": "1.0.0",
+  "description": "Ghost 'n Goblins clone featuring Claude as the orange hero — built with Phaser 3",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "Eduardo Arana",
+  "license": "MIT"
+}

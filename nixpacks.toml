@@ -1,0 +1,6 @@
+# Force Node.js provider and install step for Railway
+[phases.install]
+cmds = ["npm install"]
+
+[start]
+cmd = "node server.js"

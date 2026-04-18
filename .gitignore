@@ -1,0 +1,4 @@
+node_modules/
+Assets/extracted/
+*.log
+.DS_Store
