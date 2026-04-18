@@ -2,22 +2,64 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>ClaudeGoblin</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
       background: #000;
+      overflow: hidden;
+      touch-action: none;
+      overscroll-behavior: none;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
       display: flex;
       justify-content: center;
       align-items: center;
-      height: 100vh;
-      overflow: hidden;
     }
-    canvas { display: block; image-rendering: pixelated; }
+
+    canvas {
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
+    /* Portrait warning — only shown on narrow portrait devices */
+    #rotate-msg {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: #0d0624;
+      color: #fff;
+      font-family: monospace;
+      font-size: 16px;
+      line-height: 1.8;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      z-index: 9999;
+      pointer-events: none;
+    }
+
+    @media (orientation: portrait) and (max-device-width: 768px) {
+      #rotate-msg { display: flex; }
+    }
   </style>
 </head>
 <body>
+  <div id="rotate-msg">
+    &#x1F579; Rotate your device<br>to landscape mode
+  </div>
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
   <script src="/js/game.js"></script>
 </body>

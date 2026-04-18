@@ -129,7 +129,7 @@ class TitleScene extends Phaser.Scene {
             fontSize: '6px', fontFamily: 'monospace', color: '#666666',
         }).setOrigin(0.5);
 
-        const prompt = this.add.text(GAME_W / 2, 195, 'PRESS ENTER OR SPACE TO START', {
+        const prompt = this.add.text(GAME_W / 2, 195, 'TAP  OR  PRESS ENTER', {
             fontSize: '7px',
             fontFamily: 'monospace',
             color: '#ffffff',
@@ -137,8 +137,10 @@ class TitleScene extends Phaser.Scene {
 
         this.tweens.add({ targets: prompt, alpha: 0, duration: 500, yoyo: true, repeat: -1 });
 
-        this.input.keyboard.once('keydown-ENTER', () => this.scene.start('Game'));
-        this.input.keyboard.once('keydown-SPACE', () => this.scene.start('Game'));
+        const start = () => this.scene.start('Game');
+        this.input.keyboard.once('keydown-ENTER', start);
+        this.input.keyboard.once('keydown-SPACE', start);
+        this.input.once('pointerup', start);
     }
 }
 
@@ -159,6 +161,7 @@ class GameScene extends Phaser.Scene {
         this.levelComplete = false;
         this.projectileActive = false;
         this.knights = []; // flying knights (plain sprites, manual physics)
+        this.touch = { left: false, right: false, jumpPending: false };
 
         // ── Procedural textures ─────────────────────────────────────────────
         this._makeTextures();
@@ -219,6 +222,9 @@ class GameScene extends Phaser.Scene {
         this.keyA = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
         this.keyD = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
         this.keyW = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
+
+        // ── Virtual touch controls ───────────────────────────────────────────
+        this._createVirtualControls();
     }
 
     // ── Procedural textures ────────────────────────────────────────────────────
@@ -423,11 +429,11 @@ class GameScene extends Phaser.Scene {
         const onFloor = this.player.body.blocked.down;
 
         let dir = 0;
-        if (this.cursors.left.isDown || this.keyA.isDown) {
+        if (this.cursors.left.isDown || this.keyA.isDown || this.touch.left) {
             dir = -1;
             this.facingRight = false;
             this.player.setFlipX(true);
-        } else if (this.cursors.right.isDown || this.keyD.isDown) {
+        } else if (this.cursors.right.isDown || this.keyD.isDown || this.touch.right) {
             dir = 1;
             this.facingRight = true;
             this.player.setFlipX(false);
@@ -438,12 +444,14 @@ class GameScene extends Phaser.Scene {
             this.player.setVelocityX(dir * PLAYER_SPEED);
         }
 
-        const jumpPressed =
+        const keyJump =
             Phaser.Input.Keyboard.JustDown(this.cursors.up) ||
             Phaser.Input.Keyboard.JustDown(this.keyW) ||
             Phaser.Input.Keyboard.JustDown(this.cursors.space);
+        const touchJump = this.touch.jumpPending;
+        if (touchJump) this.touch.jumpPending = false;
 
-        if (jumpPressed && onFloor) {
+        if ((keyJump || touchJump) && onFloor) {
             this.player.setVelocityY(JUMP_VEL);
         }
 
@@ -670,7 +678,7 @@ class GameScene extends Phaser.Scene {
             'GAME OVER',
             '#ff3333',
             `SCORE  ${String(this.score).padStart(6, '0')}`,
-            'PRESS ENTER TO TRY AGAIN',
+            'TAP  OR  PRESS ENTER TO RETRY',
             () => this.scene.restart()
         );
     }
@@ -684,7 +692,7 @@ class GameScene extends Phaser.Scene {
             'LEVEL COMPLETE!',
             '#00ff88',
             `SCORE  ${String(this.score).padStart(6, '0')}   (+${WIN_BONUS} BONUS)`,
-            'PRESS ENTER TO PLAY AGAIN',
+            'TAP  OR  PRESS ENTER TO PLAY AGAIN',
             () => this.scene.restart()
         );
     }
@@ -710,8 +718,54 @@ class GameScene extends Phaser.Scene {
 
         this.tweens.add({ targets: blink, alpha: 0, duration: 500, yoyo: true, repeat: -1 });
 
-        this.input.keyboard.once('keydown-ENTER', onConfirm);
-        this.input.keyboard.once('keydown-SPACE', onConfirm);
+        // Delay touch handler to avoid accidental trigger from last tap
+        this.time.delayedCall(400, () => {
+            this.input.keyboard.once('keydown-ENTER', onConfirm);
+            this.input.keyboard.once('keydown-SPACE', onConfirm);
+            this.input.once('pointerup', onConfirm);
+        });
+    }
+
+    // ── Virtual touch controls ─────────────────────────────────────────────────
+
+    _createVirtualControls() {
+        const ALPHA_IDLE = 0.45;
+        const ALPHA_PRESS = 0.85;
+        const DEPTH = 150;
+        const LABEL_STYLE = { fontSize: '13px', fontFamily: 'monospace', color: '#ffffff' };
+
+        const makeBtn = (x, y, w, h, label, onDown, onUp) => {
+            const bg = this.add.rectangle(x, y, w, h, 0x000000, ALPHA_IDLE)
+                .setScrollFactor(0).setDepth(DEPTH).setInteractive();
+            this.add.text(x, y, label, LABEL_STYLE)
+                .setOrigin(0.5).setScrollFactor(0).setDepth(DEPTH + 1);
+            bg.on('pointerdown',  () => { bg.setAlpha(ALPHA_PRESS); if (onDown) onDown(); });
+            bg.on('pointerup',   () => { bg.setAlpha(ALPHA_IDLE);   if (onUp)   onUp();   });
+            bg.on('pointerout',  () => { bg.setAlpha(ALPHA_IDLE);   if (onUp)   onUp();   });
+            return bg;
+        };
+
+        // Left / Right
+        makeBtn(24, 202, 40, 28, '◄',
+            () => { this.touch.left = true;  },
+            () => { this.touch.left = false; }
+        );
+        makeBtn(68, 202, 40, 28, '►',
+            () => { this.touch.right = true;  },
+            () => { this.touch.right = false; }
+        );
+
+        // Jump (above the D-pad)
+        makeBtn(46, 174, 40, 28, '▲',
+            () => { this.touch.jumpPending = true; },
+            null
+        );
+
+        // Attack button (bottom-right)
+        makeBtn(GAME_W - 30, 200, 52, 32, 'Z',
+            () => this._throwProjectile(),
+            null
+        );
     }
 }
 
@@ -721,9 +775,15 @@ new Phaser.Game({
     type: Phaser.AUTO,
     width: GAME_W,
     height: GAME_H,
-    zoom: 2,
     pixelArt: true,
     backgroundColor: '#0d0624',
+    scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+    },
+    input: {
+        activePointers: 4, // support multi-touch for simultaneous button presses
+    },
     physics: {
         default: 'arcade',
         arcade: {
