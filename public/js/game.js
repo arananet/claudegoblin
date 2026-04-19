@@ -348,6 +348,7 @@ class GameScene extends Phaser.Scene {
             { x: 3320, y: 108, tiles: 7 },
             { x: 3570, y:  80, tiles: 4 },
         ];
+        this._platDefs = platDefs;
         for (const def of platDefs) {
             this._makePlatform(def.x, def.y, def.tiles);
         }
@@ -396,24 +397,50 @@ class GameScene extends Phaser.Scene {
     _addDecor(segs) {
         const inSeg = (x) => segs.some(s => x >= s.x + 12 && x < s.x + s.w - 12);
 
-        // Trees — 7 variants, placed as mid-ground scenery behind player
+        // ── Large foreground trees — base anchored exactly at ground line ──────
+        const treeSz = 0.85;
+        const treeY  = GROUND_TOP - (112 * treeSz) / 2;   // bottom = GROUND_TOP
         const treeXs = [
-            70, 250, 420,                       // seg 0
-            680, 860, 1040,                     // seg 1
-            1280, 1460, 1640, 1770,             // seg 2
-            1980, 2160, 2360,                   // seg 3
-            2620, 2790, 2980,                   // seg 4
-            3220, 3420, 3600, 3760,             // seg 5
+            70, 260, 440,
+            660, 870, 1050,
+            1260, 1470, 1660,
+            1950, 2160, 2370,
+            2610, 2810, 2990,
+            3190, 3410, 3620, 3780,
         ];
         treeXs.forEach((x, i) => {
             if (!inSeg(x)) return;
-            const img = this.add.image(x, GROUND_TOP - 52, 'trees', i % 7);
-            img.setScale(0.75).setDepth(-2).setAlpha(0.82);
-            const tints = [0xaaddaa, 0x88bb66, 0x99cc88];
-            img.setTint(tints[i % 3]);
+            this.add.image(x, treeY, 'trees', i % 7).setScale(treeSz).setDepth(-2).setAlpha(0.93);
         });
 
-        // Rocks — 4 variants, placed at ground level as foreground props
+        // ── Smaller background trees for depth (darker silhouette, depth -4) ──
+        const bgSz = 0.50;
+        const bgY  = GROUND_TOP - (112 * bgSz) / 2;
+        const bgXs = [160, 380, 770, 980, 1380, 1575, 2060, 2460, 2730, 2920, 3300, 3520, 3710];
+        bgXs.forEach((x, i) => {
+            if (!inSeg(x)) return;
+            this.add.image(x, bgY, 'trees', (i + 3) % 7)
+                .setScale(bgSz).setDepth(-4).setAlpha(0.45).setTint(0x223311);
+        });
+
+        // ── Trees on top of platforms (reference image look) ──────────────────
+        const platSz = 0.62;
+        const platTH = 112 * platSz;
+        const platTrees = [
+            { x: 2282, py: 76  },
+            { x: 3586, py: 80  },
+            { x:  736, py: 100 },
+            { x: 1152, py: 100 },
+            { x: 1392, py: 110 },
+            { x: 2732, py: 98  },
+            { x: 3360, py: 108 },
+        ];
+        platTrees.forEach(({ x, py }, i) => {
+            this.add.image(x, py - platTH / 2, 'trees', (i + 1) % 7)
+                .setScale(platSz).setDepth(-1).setAlpha(0.92);
+        });
+
+        // ── Rocks on ground ────────────────────────────────────────────────────
         const rockData = [
             [150, 0], [350, 2], [700, 1], [1000, 3],
             [1320, 0], [1600, 2], [2020, 1], [2280, 3],
@@ -422,6 +449,36 @@ class GameScene extends Phaser.Scene {
         for (const [x, frame] of rockData) {
             if (!inSeg(x)) continue;
             this.add.image(x, GROUND_TOP - 6, 'rocks', frame).setScale(0.85).setDepth(1);
+        }
+
+        // ── Rocks on platforms ─────────────────────────────────────────────────
+        const platRocks = [
+            { x: 2268, py: 76,  frame: 2 },
+            { x: 1888, py: 88,  frame: 0 },
+            { x: 1160, py: 100, frame: 1 },
+            { x: 3094, py: 94,  frame: 3 },
+        ];
+        for (const { x, py, frame } of platRocks) {
+            this.add.image(x, py - 6, 'rocks', frame).setScale(0.7).setDepth(2);
+        }
+
+        // ── Flowers along ground edge ──────────────────────────────────────────
+        const fc = [0xff99cc, 0xffff66, 0xdd88ff, 0xff6666, 0x88ffcc];
+        for (const seg of segs) {
+            for (let fx = seg.x + 12; fx < seg.x + seg.w - 12; fx += 20) {
+                if ((fx >> 4) % 3 === 0) continue;
+                this.add.rectangle(fx,     GROUND_TOP - 5, 2, 5, fc[(fx / 20 | 0) % fc.length]).setDepth(2);
+                this.add.rectangle(fx + 4, GROUND_TOP - 4, 2, 4, fc[(fx / 20 + 2 | 0) % fc.length]).setDepth(2);
+            }
+        }
+
+        // ── Flowers on platform tops ───────────────────────────────────────────
+        for (const def of (this._platDefs || [])) {
+            const pw = def.tiles * TILE;
+            for (let fx = def.x + 6; fx < def.x + pw - 6; fx += 16) {
+                if ((fx >> 4) % 4 === 0) continue;
+                this.add.rectangle(fx, def.y - 4, 2, 4, fc[(fx / 16 | 0) % fc.length]).setDepth(2);
+            }
         }
     }
 
@@ -432,13 +489,20 @@ class GameScene extends Phaser.Scene {
         const body = this.platforms.create(px + w / 2, py + TILE / 2, 'white');
         body.setDisplaySize(w, TILE).setAlpha(0).refreshBody();
 
-        // Visual: left cap + middle tiles + right cap
+        // Surface: left cap + tiled middle + right cap
         this.add.image(px + TILE / 2, py + TILE / 2, 'tile_gl').setDepth(0);
         for (let t = 1; t < tileCount - 1; t++) {
             this.add.image(px + t * TILE + TILE / 2, py + TILE / 2, 'tile_gm').setDepth(0);
         }
         if (tileCount > 1) {
             this.add.image(px + (tileCount - 1) * TILE + TILE / 2, py + TILE / 2, 'tile_gr').setDepth(0);
+        }
+
+        // Floating-island underside: tapered dirt strips give 3-D depth
+        const dirtColors = [0x5c2d00, 0x3d1a00, 0x1e0800];
+        for (let d = 0; d < 3; d++) {
+            const uw = Math.max(4, w - d * 8);
+            this.add.rectangle(px + w / 2, py + TILE + 5 + d * 5, uw, 5, dirtColors[d], 0.75 - d * 0.2).setDepth(0);
         }
     }
 
