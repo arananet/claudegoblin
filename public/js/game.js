@@ -729,40 +729,55 @@ class GameScene extends Phaser.Scene {
     // ── Virtual touch controls ─────────────────────────────────────────────────
 
     _createVirtualControls() {
-        const ALPHA_IDLE = 0.45;
-        const ALPHA_PRESS = 0.85;
-        const DEPTH = 150;
-        const LABEL_STYLE = { fontSize: '13px', fontFamily: 'monospace', color: '#ffffff' };
+        const ALPHA_IDLE  = 0.50;
+        const ALPHA_PRESS = 0.90;
+        const D = 150;                 // depth
+        const BW = 34;                 // button width
+        const BH = 27;                 // button height
+        const LBL = { fontSize: '13px', fontFamily: 'monospace', color: '#ffffff' };
+
+        // Digital D-pad: UP flush above LEFT+RIGHT, forming a proper cross
+        //
+        //       [▲]
+        //   [◄]   [►]
+        //
+        // All three buttons are adjacent — no gaps, no floating.
+        const CX = 34;                 // horizontal center of cross
+        const ROW_Y = 200;             // y-center of LEFT / RIGHT row
+        const UP_Y  = ROW_Y - BH;     // y-center of UP button (touching the row above)
 
         const makeBtn = (x, y, w, h, label, onDown, onUp) => {
-            const bg = this.add.rectangle(x, y, w, h, 0x000000, ALPHA_IDLE)
-                .setScrollFactor(0).setDepth(DEPTH).setInteractive();
-            this.add.text(x, y, label, LABEL_STYLE)
-                .setOrigin(0.5).setScrollFactor(0).setDepth(DEPTH + 1);
+            const bg = this.add.rectangle(x, y, w, h, 0x111111, ALPHA_IDLE)
+                .setScrollFactor(0).setDepth(D).setInteractive();
+            // 1px darker border for separation
+            const border = this.add.rectangle(x, y, w + 2, h + 2, 0x000000, 0.6)
+                .setScrollFactor(0).setDepth(D - 1);
+            this.add.text(x, y, label, LBL)
+                .setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
             bg.on('pointerdown',  () => { bg.setAlpha(ALPHA_PRESS); if (onDown) onDown(); });
             bg.on('pointerup',   () => { bg.setAlpha(ALPHA_IDLE);   if (onUp)   onUp();   });
             bg.on('pointerout',  () => { bg.setAlpha(ALPHA_IDLE);   if (onUp)   onUp();   });
             return bg;
         };
 
-        // Left / Right
-        makeBtn(24, 202, 40, 28, '◄',
+        // UP — centered between LEFT and RIGHT
+        makeBtn(CX, UP_Y, BW, BH, '▲',
+            () => { this.touch.jumpPending = true; },
+            null
+        );
+        // LEFT
+        makeBtn(CX - BW / 2 - BW / 2, ROW_Y, BW, BH, '◄',
             () => { this.touch.left = true;  },
             () => { this.touch.left = false; }
         );
-        makeBtn(68, 202, 40, 28, '►',
+        // RIGHT
+        makeBtn(CX + BW / 2 + BW / 2, ROW_Y, BW, BH, '►',
             () => { this.touch.right = true;  },
             () => { this.touch.right = false; }
         );
 
-        // Jump (above the D-pad)
-        makeBtn(46, 174, 40, 28, '▲',
-            () => { this.touch.jumpPending = true; },
-            null
-        );
-
-        // Attack button (bottom-right)
-        makeBtn(GAME_W - 30, 200, 52, 32, 'Z',
+        // ATTACK — bottom-right, clearly separated from D-pad
+        makeBtn(GAME_W - 30, 200, 54, 34, 'Z',
             () => this._throwProjectile(),
             null
         );
@@ -773,13 +788,14 @@ class GameScene extends Phaser.Scene {
 
 new Phaser.Game({
     type: Phaser.AUTO,
-    width: GAME_W,
-    height: GAME_H,
     pixelArt: true,
     backgroundColor: '#0d0624',
     scale: {
+        parent: 'game-container',
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
+        width: GAME_W,
+        height: GAME_H,
     },
     input: {
         activePointers: 4, // support multi-touch for simultaneous button presses
