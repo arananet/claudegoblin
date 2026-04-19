@@ -65,6 +65,13 @@ class BootScene extends Phaser.Scene {
         this.load.spritesheet('slime_walk',  'assets/slime/walk.png',  { frameWidth: 32, frameHeight: 32 });
         this.load.spritesheet('slime_death', 'assets/slime/death.png', { frameWidth: 32, frameHeight: 32 });
 
+        // Decor — trees (80×112 each, 7 variants) and rocks (48×32, 4 variants)
+        this.load.spritesheet('trees', 'assets/decor/trees.png', { frameWidth: 80, frameHeight: 112 });
+        this.load.spritesheet('rocks', 'assets/decor/rocks.png', { frameWidth: 48, frameHeight: 32  });
+
+        // Cave/dungeon tileset — 16×16 tiles, 8 cols × 13 rows
+        this.load.spritesheet('tileset', 'assets/tiles/tileset.png', { frameWidth: 16, frameHeight: 16 });
+
         // Audio (sourced from arananet/claude_jump)
         this.load.audio('bgm',     'music/bgm.mp3');
         this.load.audio('sfx_jump',    'music/jump.wav');
@@ -180,7 +187,7 @@ class GameScene extends Phaser.Scene {
         this._makeTextures();
 
         // ── World & camera ──────────────────────────────────────────────────
-        this.physics.world.setBounds(0, 0, WORLD_W, GAME_H);
+        this.physics.world.setBounds(0, 0, WORLD_W, GAME_H + 200); // extra height for pit falls
         this.cameras.main.setBounds(0, 0, WORLD_W, GAME_H);
 
         // ── Parallax background (fixed to camera, scroll via tilePositionX) ─
@@ -287,32 +294,48 @@ class GameScene extends Phaser.Scene {
     // ── Level building ─────────────────────────────────────────────────────────
 
     _buildLevel() {
-        // ── Ground floor ────────────────────────────────────────────────────
-        // One large invisible physics body for the ground
-        const gBody = this.platforms.create(WORLD_W / 2, GROUND_TOP + 24, 'white');
-        gBody.setDisplaySize(WORLD_W, 48).setAlpha(0).refreshBody();
+        // Ground segments separated by pits the player must jump over
+        const segs = [
+            { x: 0,    w: 520 },
+            { x: 620,  w: 480 },
+            { x: 1220, w: 580 },
+            { x: 1920, w: 520 },
+            { x: 2560, w: 480 },
+            { x: 3160, w: 680 },
+        ];
+        this._groundSegs = segs;
 
-        // Ground visuals (tile sprites tile automatically)
-        this.add.tileSprite(WORLD_W / 2, GROUND_TOP + 8,  WORLD_W, TILE, 'tile_gm').setDepth(0);
-        this.add.tileSprite(WORLD_W / 2, GROUND_TOP + 24, WORLD_W, TILE, 'tile_fm').setDepth(0);
-        this.add.tileSprite(WORLD_W / 2, GROUND_TOP + 40, WORLD_W, TILE, 'tile_fm').setDepth(0);
+        for (const seg of segs) {
+            this._buildGroundSeg(seg.x, seg.w);
+        }
 
-        // ── Elevated platforms ───────────────────────────────────────────────
+        // Dark abyss in each pit gap
+        for (let i = 0; i < segs.length - 1; i++) {
+            const pitX = segs[i].x + segs[i].w;
+            const pitW = segs[i + 1].x - pitX;
+            const cx   = pitX + pitW / 2;
+            this.add.rectangle(cx, GROUND_TOP + 28, pitW, 60, 0x0a0320).setDepth(1);
+            this.add.rectangle(cx, GROUND_TOP + 52, pitW, 8, 0x1a0010, 0.45).setDepth(1);
+        }
+
+        // Elevated platforms — positioned to span pits as safe crossing points
         const platDefs = [
-            { x:  600, y: 128, tiles: 8 },
-            { x: 1100, y: 112, tiles: 6 },
-            { x: 1700, y: 128, tiles: 8 },
+            { x:  560, y: 128, tiles: 8 },
+            { x: 1060, y: 112, tiles: 6 },
+            { x: 1760, y: 128, tiles: 8 },
             { x: 2400, y: 112, tiles: 8 },
-            { x: 2900, y: 128, tiles: 6 },
+            { x: 2980, y: 128, tiles: 6 },
             { x: 3300, y: 112, tiles: 8 },
         ];
-
         for (const def of platDefs) {
             this._makePlatform(def.x, def.y, def.tiles);
         }
 
-        // ── Goal flag at level end ───────────────────────────────────────────
-        const flagX = WORLD_W - 80;
+        // Decorations (trees + rocks)
+        this._addDecor(segs);
+
+        // Goal flag
+        const flagX = WORLD_W - 60;
         this.add.rectangle(flagX, GROUND_TOP - 24, 2, 48, 0xffffff).setDepth(1);
         this.add.triangle(
             flagX + 2, GROUND_TOP - 48,
@@ -325,6 +348,47 @@ class GameScene extends Phaser.Scene {
         }).setDepth(1);
 
         this.levelEndX = flagX;
+    }
+
+    _buildGroundSeg(segX, segW) {
+        const body = this.platforms.create(segX + segW / 2, GROUND_TOP + 24, 'white');
+        body.setDisplaySize(segW, 48).setAlpha(0).refreshBody();
+
+        this.add.tileSprite(segX + segW / 2, GROUND_TOP + 8,  segW, TILE, 'tile_gm').setDepth(0);
+        this.add.tileSprite(segX + segW / 2, GROUND_TOP + 24, segW, TILE, 'tile_fm').setDepth(0);
+        this.add.tileSprite(segX + segW / 2, GROUND_TOP + 40, segW, TILE, 'tile_fm').setDepth(0);
+    }
+
+    _addDecor(segs) {
+        const inSeg = (x) => segs.some(s => x >= s.x + 12 && x < s.x + s.w - 12);
+
+        // Trees — 7 variants, placed as mid-ground scenery behind player
+        const treeXs = [
+            70, 250, 420,                       // seg 0
+            680, 860, 1040,                     // seg 1
+            1280, 1460, 1640, 1770,             // seg 2
+            1980, 2160, 2360,                   // seg 3
+            2620, 2790, 2980,                   // seg 4
+            3220, 3420, 3600, 3760,             // seg 5
+        ];
+        treeXs.forEach((x, i) => {
+            if (!inSeg(x)) return;
+            const img = this.add.image(x, GROUND_TOP - 52, 'trees', i % 7);
+            img.setScale(0.75).setDepth(-2).setAlpha(0.82);
+            const tints = [0xaaddaa, 0x88bb66, 0x99cc88];
+            img.setTint(tints[i % 3]);
+        });
+
+        // Rocks — 4 variants, placed at ground level as foreground props
+        const rockData = [
+            [150, 0], [350, 2], [700, 1], [1000, 3],
+            [1320, 0], [1600, 2], [2020, 1], [2280, 3],
+            [2660, 0], [2900, 2], [3280, 1], [3500, 3], [3720, 0],
+        ];
+        for (const [x, frame] of rockData) {
+            if (!inSeg(x)) continue;
+            this.add.image(x, GROUND_TOP - 6, 'rocks', frame).setScale(0.85).setDepth(1);
+        }
     }
 
     _makePlatform(px, py, tileCount) {
@@ -347,7 +411,7 @@ class GameScene extends Phaser.Scene {
     // ── Enemy spawning ─────────────────────────────────────────────────────────
 
     _spawnEnemies() {
-        const zombieXs = [700, 1300, 1900, 2600, 3100, 3600];
+        const zombieXs = [200, 800, 1500, 2100, 2750, 3450];
         for (const x of zombieXs) {
             const z = this.zombies.create(x, GROUND_TOP - 16, 'slime_walk');
             z.setCollideWorldBounds(true);
@@ -356,16 +420,18 @@ class GameScene extends Phaser.Scene {
             z.alive = true;
         }
 
-        // Flying knights — plain sprites, manually moved each frame
+        // Flying specters — purple, upside-down, larger than ground zombies
         const knightDefs = [
-            { x: 1100, y: 80 },
-            { x: 2200, y: 70 },
-            { x: 3000, y: 90 },
+            { x: 900,  y: 80 },
+            { x: 2100, y: 70 },
+            { x: 3300, y: 90 },
         ];
         for (const def of knightDefs) {
             const k = this.add.sprite(def.x, def.y, 'slime_walk');
             k.play('slime_walk');
-            k.setTint(0xaaaaff); // blue tint to distinguish from zombies
+            k.setTint(0xcc22ff);  // deep purple
+            k.setScale(1.4);
+            k.setFlipY(true);     // upside-down bat-like silhouette
             k.alive = true;
             k.startY = def.y;
             k.time = Phaser.Math.FloatBetween(0, Math.PI * 2);
@@ -376,7 +442,7 @@ class GameScene extends Phaser.Scene {
     // ── Armor pickup ───────────────────────────────────────────────────────────
 
     _createArmorPickup() {
-        this.armorPickup = this.physics.add.sprite(1950, GROUND_TOP - 8, 'chest');
+        this.armorPickup = this.physics.add.sprite(1500, GROUND_TOP - 8, 'chest');
         this.armorPickup.body.setAllowGravity(false);
         this.armorPickup.body.setImmovable(true);
         this.armorPickup.alive = true;
@@ -438,6 +504,11 @@ class GameScene extends Phaser.Scene {
         this._updateKnights(dt);
         this._checkPlayerEnemyContact();
         this._checkProjKnightCollisions();
+
+        if (this.player.y > GAME_H + 20) {
+            this._pitDeath();
+            return;
+        }
 
         if (this.player.x >= this.levelEndX) {
             this._triggerLevelComplete();
@@ -557,6 +628,12 @@ class GameScene extends Phaser.Scene {
     _updateZombies() {
         this.zombies.getChildren().forEach(z => {
             if (!z.alive) return;
+            if (z.y > GAME_H + 20) {
+                z.alive = false;
+                z.body.setEnable(false);
+                z.destroy();
+                return;
+            }
             const dir = this.player.x < z.x ? -1 : 1;
             z.setVelocityX(dir * ZOMBIE_SPEED);
             z.setFlipX(dir < 0);
@@ -689,6 +766,16 @@ class GameScene extends Phaser.Scene {
     _respawnPlayer() {
         this.player.setPosition(80, GROUND_TOP - 32);
         this.player.setVelocity(0, 0);
+    }
+
+    _pitDeath() {
+        if (this.invincible || this.isDead) return;
+        this.player.setVelocity(0, 0);
+        this._playerTakeHit();
+        if (!this.isDead) {
+            this.player.setPosition(80, GROUND_TOP - 32);
+            this.player.setVelocity(0, 0);
+        }
     }
 
     // ── Game over / level complete ─────────────────────────────────────────────
