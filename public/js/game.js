@@ -318,14 +318,35 @@ class GameScene extends Phaser.Scene {
             this.add.rectangle(cx, GROUND_TOP + 52, pitW, 8, 0x1a0010, 0.45).setDepth(1);
         }
 
-        // Elevated platforms — positioned to span pits as safe crossing points
+        // Multi-level platforms — pits have low crossing + high alternate route,
+        // segments have interior platforms for vertical exploration
         const platDefs = [
-            { x:  560, y: 128, tiles: 8 },
-            { x: 1060, y: 112, tiles: 6 },
-            { x: 1760, y: 128, tiles: 8 },
-            { x: 2400, y: 112, tiles: 8 },
-            { x: 2980, y: 128, tiles: 6 },
-            { x: 3300, y: 112, tiles: 8 },
+            // Pit A crossing
+            { x:  480, y: 128, tiles: 8 },
+            // Seg 1 interior
+            { x:  700, y: 100, tiles: 5 },
+            { x:  900, y: 132, tiles: 4 },
+            // Pit B — two-step crossing
+            { x: 1060, y: 140, tiles: 5 },
+            { x: 1120, y: 100, tiles: 6 },
+            // Seg 2 interior
+            { x: 1360, y: 110, tiles: 5 },
+            // Pit C — low + high
+            { x: 1770, y: 125, tiles: 6 },
+            { x: 1860, y:  88, tiles: 5 },
+            // Seg 3 interior
+            { x: 2060, y: 105, tiles: 5 },
+            { x: 2260, y:  76, tiles: 4 },
+            // Pit D crossing
+            { x: 2400, y: 120, tiles: 7 },
+            // Seg 4 interior
+            { x: 2700, y:  98, tiles: 5 },
+            // Pit E — low + high
+            { x: 3000, y: 130, tiles: 6 },
+            { x: 3080, y:  94, tiles: 6 },
+            // Seg 5 interior
+            { x: 3320, y: 108, tiles: 7 },
+            { x: 3570, y:  80, tiles: 4 },
         ];
         for (const def of platDefs) {
             this._makePlatform(def.x, def.y, def.tiles);
@@ -354,9 +375,22 @@ class GameScene extends Phaser.Scene {
         const body = this.platforms.create(segX + segW / 2, GROUND_TOP + 24, 'white');
         body.setDisplaySize(segW, 48).setAlpha(0).refreshBody();
 
-        this.add.tileSprite(segX + segW / 2, GROUND_TOP + 8,  segW, TILE, 'tile_gm').setDepth(0);
-        this.add.tileSprite(segX + segW / 2, GROUND_TOP + 24, segW, TILE, 'tile_fm').setDepth(0);
-        this.add.tileSprite(segX + segW / 2, GROUND_TOP + 40, segW, TILE, 'tile_fm').setDepth(0);
+        // Top surface row: left cap + tiled middle + right cap
+        const midW = Math.max(0, segW - TILE * 2);
+        this.add.image(segX + TILE / 2,        GROUND_TOP + 8, 'tile_gl').setDepth(0);
+        if (midW > 0) {
+            this.add.tileSprite(segX + TILE + midW / 2, GROUND_TOP + 8, midW, TILE, 'tile_gm').setDepth(0);
+        }
+        this.add.image(segX + segW - TILE / 2,  GROUND_TOP + 8, 'tile_gr').setDepth(0);
+
+        // Fill rows: left fill + middle + right fill
+        for (const fy of [GROUND_TOP + 24, GROUND_TOP + 40]) {
+            this.add.image(segX + TILE / 2,        fy, 'tile_fl').setDepth(0);
+            if (midW > 0) {
+                this.add.tileSprite(segX + TILE + midW / 2, fy, midW, TILE, 'tile_fm').setDepth(0);
+            }
+            this.add.image(segX + segW - TILE / 2,  fy, 'tile_fr').setDepth(0);
+        }
     }
 
     _addDecor(segs) {
@@ -531,9 +565,11 @@ class GameScene extends Phaser.Scene {
             this.player.setFlipX(false);
         }
 
-        // Ghost 'n Goblins: direction locked mid-air
-        if (onFloor) {
+        // Full air control — set velocity when pressing, preserve momentum when not
+        if (dir !== 0) {
             this.player.setVelocityX(dir * PLAYER_SPEED);
+        } else if (onFloor) {
+            this.player.setVelocityX(0);
         }
 
         const keyJump =
@@ -856,10 +892,8 @@ class GameScene extends Phaser.Scene {
         const ALPHA = 0.50;
         const BW    = 34;
         const BH    = 27;
-        const LBL   = { fontSize: '13px', fontFamily: 'monospace', color: '#ffffff' };
+        const LBL   = { fontSize: '11px', fontFamily: 'monospace', color: '#ffffff' };
 
-        // D-pad positions: LEFT center=17, RIGHT center=85, UP center=51
-        // (CX=51 so LEFT's left edge is at x=0, fully on-screen)
         const CX    = 51;
         const ROW_Y = 204;
         const UP_Y  = ROW_Y - BH;  // 177
@@ -871,10 +905,15 @@ class GameScene extends Phaser.Scene {
             return bg;
         };
 
-        this._btnUp    = makePad(CX,          UP_Y,  BW,      BH, '▲');
-        this._btnLeft  = makePad(CX - BW,     ROW_Y, BW,      BH, '◄');
-        this._btnRight = makePad(CX + BW,     ROW_Y, BW,      BH, '►');
-        this._btnAtk   = makePad(GAME_W - 30, ROW_Y, BW + 20, BH + 7, 'Z');
+        // Top row: diagonal-left jump, straight jump, diagonal-right jump
+        this._btnUpLeft  = makePad(CX - BW, UP_Y,  BW, BH, '◄▲');
+        this._btnUp      = makePad(CX,      UP_Y,  BW, BH, '▲');
+        this._btnUpRight = makePad(CX + BW, UP_Y,  BW, BH, '▲►');
+        // Bottom row: left, (gap), right
+        this._btnLeft    = makePad(CX - BW, ROW_Y, BW, BH, '◄');
+        this._btnRight   = makePad(CX + BW, ROW_Y, BW, BH, '►');
+        // Attack
+        this._btnAtk     = makePad(GAME_W - 30, ROW_Y, BW + 20, BH + 7, 'Z');
     }
 
     // ── Zone-based multi-touch polling ─────────────────────────────────────────
@@ -885,15 +924,25 @@ class GameScene extends Phaser.Scene {
     _pollTouchZones() {
         const CX    = 51;
         const BW    = 34;
+        const BH    = 27;
         const ROW_Y = 204;
-        const UP_Y  = ROW_Y - BW;   // 170
+        const UP_Y  = ROW_Y - BH;  // 177
 
-        // Touch detection zones (slightly larger than visuals for usability)
+        // x splits: left|center at 34 (CX-BW/2), center|right at 68 (CX+BW/2)
+        const xMid  = CX - BW / 2;  // 34
+        const xRgt  = CX + BW / 2;  // 68
+        const xEdge = CX + BW * 2;  // 119
+        const yTop  = UP_Y - BH / 2; // 163 — top of jump row
+        const yDiv  = ROW_Y - BH / 2; // 190 — split between rows
+
+        // 5-zone D-pad: three jump buttons on top, left/right on bottom
         const Z = {
-            left:  { x1: 0,             y1: ROW_Y - BW/2, x2: CX,             y2: GAME_H },
-            right: { x1: CX + BW/2,     y1: ROW_Y - BW/2, x2: CX + BW*2,      y2: GAME_H },
-            up:    { x1: 0,             y1: UP_Y  - BW/2, x2: CX + BW*2,      y2: ROW_Y - BW/2 },
-            atk:   { x1: GAME_W - 60,  y1: GAME_H - 50,  x2: GAME_W,          y2: GAME_H },
+            upleft:  { x1: 0,     y1: yTop, x2: xMid,  y2: yDiv },
+            up:      { x1: xMid,  y1: yTop, x2: xRgt,  y2: yDiv },
+            upright: { x1: xRgt,  y1: yTop, x2: xEdge, y2: yDiv },
+            left:    { x1: 0,     y1: yDiv, x2: xMid,  y2: GAME_H },
+            right:   { x1: xRgt,  y1: yDiv, x2: xEdge, y2: GAME_H },
+            atk:     { x1: GAME_W - 60, y1: GAME_H - 50, x2: GAME_W, y2: GAME_H },
         };
 
         const hit = (px, py, z) => px >= z.x1 && px <= z.x2 && py >= z.y1 && py <= z.y2;
@@ -901,10 +950,12 @@ class GameScene extends Phaser.Scene {
         let left = false, right = false, up = false, atk = false;
         for (const ptr of this.input.manager.pointers) {
             if (!ptr.isDown) continue;
-            if (hit(ptr.x, ptr.y, Z.left))  left  = true;
-            if (hit(ptr.x, ptr.y, Z.right)) right = true;
-            if (hit(ptr.x, ptr.y, Z.up))    up    = true;
-            if (hit(ptr.x, ptr.y, Z.atk))   atk   = true;
+            if (hit(ptr.x, ptr.y, Z.upleft))  { left  = true; up = true; }
+            if (hit(ptr.x, ptr.y, Z.up))      { up    = true; }
+            if (hit(ptr.x, ptr.y, Z.upright)) { right = true; up = true; }
+            if (hit(ptr.x, ptr.y, Z.left))    { left  = true; }
+            if (hit(ptr.x, ptr.y, Z.right))   { right = true; }
+            if (hit(ptr.x, ptr.y, Z.atk))     { atk   = true; }
         }
 
         this.touch.left  = left;
@@ -919,10 +970,12 @@ class GameScene extends Phaser.Scene {
         this.touch._prevAtk = atk;
 
         // Visual feedback
-        if (this._btnLeft)  this._btnLeft.setAlpha(left  ? 0.9 : 0.5);
-        if (this._btnRight) this._btnRight.setAlpha(right ? 0.9 : 0.5);
-        if (this._btnUp)    this._btnUp.setAlpha(up    ? 0.9 : 0.5);
-        if (this._btnAtk)   this._btnAtk.setAlpha(atk   ? 0.9 : 0.5);
+        if (this._btnLeft)    this._btnLeft.setAlpha(left                ? 0.9 : 0.5);
+        if (this._btnRight)   this._btnRight.setAlpha(right              ? 0.9 : 0.5);
+        if (this._btnUp)      this._btnUp.setAlpha(up && !left && !right ? 0.9 : 0.5);
+        if (this._btnUpLeft)  this._btnUpLeft.setAlpha(left && up        ? 0.9 : 0.5);
+        if (this._btnUpRight) this._btnUpRight.setAlpha(right && up      ? 0.9 : 0.5);
+        if (this._btnAtk)     this._btnAtk.setAlpha(atk                  ? 0.9 : 0.5);
     }
 }
 
