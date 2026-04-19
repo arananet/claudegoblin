@@ -64,6 +64,12 @@ class BootScene extends Phaser.Scene {
         // Enemies (6 walk, 7 death — all 32x32)
         this.load.spritesheet('slime_walk',  'assets/slime/walk.png',  { frameWidth: 32, frameHeight: 32 });
         this.load.spritesheet('slime_death', 'assets/slime/death.png', { frameWidth: 32, frameHeight: 32 });
+
+        // Audio (sourced from arananet/claude_jump)
+        this.load.audio('bgm',     'music/bgm.mp3');
+        this.load.audio('sfx_jump',    'music/jump.wav');
+        this.load.audio('sfx_collect', 'music/collect.wav');
+        this.load.audio('sfx_die',     'music/die.wav');
     }
 
     create() {
@@ -137,7 +143,13 @@ class TitleScene extends Phaser.Scene {
 
         this.tweens.add({ targets: prompt, alpha: 0, duration: 500, yoyo: true, repeat: -1 });
 
-        const start = () => this.scene.start('Game');
+        const start = () => {
+            // Request fullscreen on mobile — must happen inside a user gesture
+            if (!this.scale.isFullscreen) {
+                this.scale.startFullscreen();
+            }
+            this.scene.start('Game');
+        };
         this.input.keyboard.once('keydown-ENTER', start);
         this.input.keyboard.once('keydown-SPACE', start);
         this.input.once('pointerup', start);
@@ -161,7 +173,8 @@ class GameScene extends Phaser.Scene {
         this.levelComplete = false;
         this.projectileActive = false;
         this.knights = []; // flying knights (plain sprites, manual physics)
-        this.touch = { left: false, right: false, jumpPending: false };
+        // touch state — populated each frame by _pollTouchZones()
+        this.touch = { left: false, right: false, jumpPending: false, _prevUp: false, _prevAtk: false };
 
         // ── Procedural textures ─────────────────────────────────────────────
         this._makeTextures();
@@ -225,6 +238,13 @@ class GameScene extends Phaser.Scene {
 
         // ── Virtual touch controls ───────────────────────────────────────────
         this._createVirtualControls();
+
+        // ── Audio ────────────────────────────────────────────────────────────
+        this.sfxJump    = this.sound.add('sfx_jump',    { volume: 0.6 });
+        this.sfxCollect = this.sound.add('sfx_collect', { volume: 0.7 });
+        this.sfxDie     = this.sound.add('sfx_die',     { volume: 0.8 });
+        this.bgm        = this.sound.add('bgm',         { loop: true, volume: 0.4 });
+        this.bgm.play();
     }
 
     // ── Procedural textures ────────────────────────────────────────────────────
@@ -410,6 +430,7 @@ class GameScene extends Phaser.Scene {
         this.bgFar.tilePositionX    = sx * 0.35;
         this.bgNear.tilePositionX   = sx * 0.65;
 
+        this._pollTouchZones();
         this._handleMovement();
         this._handleAttackInput();
         this._updateProjectiles();
@@ -453,6 +474,7 @@ class GameScene extends Phaser.Scene {
 
         if ((keyJump || touchJump) && onFloor) {
             this.player.setVelocityY(JUMP_VEL);
+            this.sfxJump.play();
         }
 
         // Animate (skip during armored attack)
@@ -622,6 +644,7 @@ class GameScene extends Phaser.Scene {
         pickup.alive = false;
         pickup.destroy();
         this.armored = true;
+        this.sfxCollect.play();
         this._updateHUD();
     }
 
@@ -673,6 +696,8 @@ class GameScene extends Phaser.Scene {
     _gameOver() {
         this.isDead = true;
         this.player.setVelocity(0, 0);
+        this.bgm.stop();
+        this.sfxDie.play();
 
         this._showOverlay(
             'GAME OVER',
@@ -687,6 +712,8 @@ class GameScene extends Phaser.Scene {
         this.levelComplete = true;
         this.score += WIN_BONUS;
         this._updateHUD();
+        this.bgm.stop();
+        this.sfxCollect.play();
 
         this._showOverlay(
             'LEVEL COMPLETE!',
@@ -727,60 +754,88 @@ class GameScene extends Phaser.Scene {
     }
 
     // ── Virtual touch controls ─────────────────────────────────────────────────
+    //
+    // Layout (game coordinates):
+    //
+    //        [ ▲ UP  ]          — x:17–51, y:173–200 (visual); zone x:0–102
+    //   [◄ LEFT][► RIGHT]       — LEFT x:0–34, RIGHT x:68–102, y:200–227
+    //                  [Z ATK]  — x:GAME_W-57 to GAME_W, y:183–217
+    //
+    // Input is read by _pollTouchZones() every frame — no event handlers
+    // for movement/jump, so multi-touch diagonal movement always works.
 
     _createVirtualControls() {
-        const ALPHA_IDLE  = 0.50;
-        const ALPHA_PRESS = 0.90;
-        const D = 150;                 // depth
-        const BW = 34;                 // button width
-        const BH = 27;                 // button height
-        const LBL = { fontSize: '13px', fontFamily: 'monospace', color: '#ffffff' };
+        const D     = 150;
+        const ALPHA = 0.50;
+        const BW    = 34;
+        const BH    = 27;
+        const LBL   = { fontSize: '13px', fontFamily: 'monospace', color: '#ffffff' };
 
-        // Digital D-pad: UP flush above LEFT+RIGHT, forming a proper cross
-        //
-        //       [▲]
-        //   [◄]   [►]
-        //
-        // All three buttons are adjacent — no gaps, no floating.
-        const CX = 34;                 // horizontal center of cross
-        const ROW_Y = 200;             // y-center of LEFT / RIGHT row
-        const UP_Y  = ROW_Y - BH;     // y-center of UP button (touching the row above)
+        // D-pad positions: LEFT center=17, RIGHT center=85, UP center=51
+        // (CX=51 so LEFT's left edge is at x=0, fully on-screen)
+        const CX    = 51;
+        const ROW_Y = 204;
+        const UP_Y  = ROW_Y - BH;  // 177
 
-        const makeBtn = (x, y, w, h, label, onDown, onUp) => {
-            const bg = this.add.rectangle(x, y, w, h, 0x111111, ALPHA_IDLE)
-                .setScrollFactor(0).setDepth(D).setInteractive();
-            // 1px darker border for separation
-            const border = this.add.rectangle(x, y, w + 2, h + 2, 0x000000, 0.6)
-                .setScrollFactor(0).setDepth(D - 1);
-            this.add.text(x, y, label, LBL)
-                .setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
-            bg.on('pointerdown',  () => { bg.setAlpha(ALPHA_PRESS); if (onDown) onDown(); });
-            bg.on('pointerup',   () => { bg.setAlpha(ALPHA_IDLE);   if (onUp)   onUp();   });
-            bg.on('pointerout',  () => { bg.setAlpha(ALPHA_IDLE);   if (onUp)   onUp();   });
+        const makePad = (x, y, w, h, label) => {
+            const bg = this.add.rectangle(x, y, w, h, 0x111111, ALPHA).setScrollFactor(0).setDepth(D);
+            this.add.rectangle(x, y, w + 2, h + 2, 0x000000, 0.55).setScrollFactor(0).setDepth(D - 1);
+            this.add.text(x, y, label, LBL).setOrigin(0.5).setScrollFactor(0).setDepth(D + 1);
             return bg;
         };
 
-        // UP — centered between LEFT and RIGHT
-        makeBtn(CX, UP_Y, BW, BH, '▲',
-            () => { this.touch.jumpPending = true; },
-            null
-        );
-        // LEFT
-        makeBtn(CX - BW / 2 - BW / 2, ROW_Y, BW, BH, '◄',
-            () => { this.touch.left = true;  },
-            () => { this.touch.left = false; }
-        );
-        // RIGHT
-        makeBtn(CX + BW / 2 + BW / 2, ROW_Y, BW, BH, '►',
-            () => { this.touch.right = true;  },
-            () => { this.touch.right = false; }
-        );
+        this._btnUp    = makePad(CX,          UP_Y,  BW,      BH, '▲');
+        this._btnLeft  = makePad(CX - BW,     ROW_Y, BW,      BH, '◄');
+        this._btnRight = makePad(CX + BW,     ROW_Y, BW,      BH, '►');
+        this._btnAtk   = makePad(GAME_W - 30, ROW_Y, BW + 20, BH + 7, 'Z');
+    }
 
-        // ATTACK — bottom-right, clearly separated from D-pad
-        makeBtn(GAME_W - 30, 200, 54, 34, 'Z',
-            () => this._throwProjectile(),
-            null
-        );
+    // ── Zone-based multi-touch polling ─────────────────────────────────────────
+    //
+    // Reading pointer positions each frame (instead of event callbacks) means
+    // any combination of fingers — including diagonal jump — is handled correctly.
+
+    _pollTouchZones() {
+        const CX    = 51;
+        const BW    = 34;
+        const ROW_Y = 204;
+        const UP_Y  = ROW_Y - BW;   // 170
+
+        // Touch detection zones (slightly larger than visuals for usability)
+        const Z = {
+            left:  { x1: 0,             y1: ROW_Y - BW/2, x2: CX,             y2: GAME_H },
+            right: { x1: CX + BW/2,     y1: ROW_Y - BW/2, x2: CX + BW*2,      y2: GAME_H },
+            up:    { x1: 0,             y1: UP_Y  - BW/2, x2: CX + BW*2,      y2: ROW_Y - BW/2 },
+            atk:   { x1: GAME_W - 60,  y1: GAME_H - 50,  x2: GAME_W,          y2: GAME_H },
+        };
+
+        const hit = (px, py, z) => px >= z.x1 && px <= z.x2 && py >= z.y1 && py <= z.y2;
+
+        let left = false, right = false, up = false, atk = false;
+        for (const ptr of this.input.manager.pointers) {
+            if (!ptr.isDown) continue;
+            if (hit(ptr.x, ptr.y, Z.left))  left  = true;
+            if (hit(ptr.x, ptr.y, Z.right)) right = true;
+            if (hit(ptr.x, ptr.y, Z.up))    up    = true;
+            if (hit(ptr.x, ptr.y, Z.atk))   atk   = true;
+        }
+
+        this.touch.left  = left;
+        this.touch.right = right;
+
+        // Jump: rising-edge only (one jump per press)
+        if (up && !this.touch._prevUp) this.touch.jumpPending = true;
+        this.touch._prevUp = up;
+
+        // Attack: rising-edge only
+        if (atk && !this.touch._prevAtk) this._throwProjectile();
+        this.touch._prevAtk = atk;
+
+        // Visual feedback
+        if (this._btnLeft)  this._btnLeft.setAlpha(left  ? 0.9 : 0.5);
+        if (this._btnRight) this._btnRight.setAlpha(right ? 0.9 : 0.5);
+        if (this._btnUp)    this._btnUp.setAlpha(up    ? 0.9 : 0.5);
+        if (this._btnAtk)   this._btnAtk.setAlpha(atk   ? 0.9 : 0.5);
     }
 }
 
